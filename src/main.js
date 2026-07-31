@@ -32,25 +32,47 @@ async function api(path, options = {}) {
 }
 
 function landing() {
-  app.innerHTML = `<main class="landing screen"><section class="hero"><div><span class="eyebrow">SELECTSTART · SOBREVIVÊNCIA ONLINE</span><h1>Sua cidade.<br>Sua casa.<br>Sua história.</h1><p>Entre em uma cidade viva, encontre outros jogadores e participe de desafios de sobrevivência. Cada conta recebe uma casa numerada e persistente.</p><button class="primary" id="enter">Entrar para jogar</button></div><div class="city-card"><div><strong>1.000</strong><span>casas preparadas para jogadores reais</span></div></div></section></main><dialog id="login" class="modal"><form class="login-card"><button type="button" class="close">×</button><img src="${LOGO_URL}" alt="GateGuard"><label>Login<input name="login" autocomplete="username" required></label><label>Senha<input name="password" type="password" autocomplete="current-password" required></label><label><span><input type="checkbox" id="show-password"> Exibir senha</span></label><button class="primary">Entrar</button><p class="feedback"></p></form></dialog>`;
+  app.innerHTML = `<main class="landing screen"><section class="hero"><div><span class="eyebrow">SELECTSTART · SOBREVIVÊNCIA ONLINE</span><h1>Sua cidade.<br>Sua casa.<br>Sua história.</h1><p>Entre em uma cidade viva, encontre outros jogadores e participe de desafios de sobrevivência. Cada conta recebe uma casa numerada e persistente.</p><button class="primary" id="enter">Entrar para jogar</button></div><div class="city-card"><div><strong>1.000</strong><span>casas preparadas para jogadores reais</span></div></div></section></main><dialog id="login" class="modal"><form class="login-card" data-mode="login"><button type="button" class="close">×</button><img src="${LOGO_URL}" alt="GateGuard"><div class="auth-tabs"><button type="button" class="is-active" data-auth-mode="login">Entrar</button><button type="button" data-auth-mode="register">Criar conta</button></div><label data-register-field hidden>Nome do jogador<input name="name" autocomplete="name" minlength="2" maxlength="120"></label><label>Login<input name="login" autocomplete="username" required minlength="2" maxlength="80"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="64"></label><label data-register-field hidden>Confirmar senha<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="64"></label><label><span><input type="checkbox" id="show-password"> Exibir senha</span></label><button class="primary" id="auth-submit">Entrar</button><p class="feedback"></p></form></dialog>`;
   const modal = app.querySelector("#login");
+  const form = app.querySelector("form");
+  const setMode = (mode) => {
+    form.dataset.mode = mode;
+    form.querySelectorAll("[data-register-field]").forEach((field) => {
+      field.hidden = mode !== "register";
+      field.querySelector("input").required = mode === "register";
+    });
+    form.querySelectorAll("[data-auth-mode]").forEach((button) =>
+      button.classList.toggle("is-active", button.dataset.authMode === mode),
+    );
+    form.querySelector("#auth-submit").textContent = mode === "register" ? "Criar minha conta" : "Entrar";
+    form.querySelector("[name=password]").autocomplete = mode === "register" ? "new-password" : "current-password";
+    form.querySelector(".feedback").textContent = "";
+  };
   app.querySelector("#enter").onclick = () => modal.showModal();
   app.querySelector(".close").onclick = () => modal.close();
+  form.querySelectorAll("[data-auth-mode]").forEach((button) => (button.onclick = () => setMode(button.dataset.authMode)));
   app.querySelector("#show-password").onchange = (e) => {
-    app.querySelector("[name=password]").type = e.target.checked
-      ? "text"
-      : "password";
+    form.querySelectorAll('[name="password"],[name="confirmPassword"]').forEach((input) => { input.type = e.target.checked ? "text" : "password"; });
   };
-  app.querySelector("form").onsubmit = async (e) => {
+  form.onsubmit = async (e) => {
     e.preventDefault();
     const button = e.submitter;
     button.disabled = true;
     const feedback = app.querySelector(".feedback");
-    feedback.textContent = "Validando acesso e pagamento...";
+    const values = Object.fromEntries(new FormData(e.currentTarget));
     try {
+      if (form.dataset.mode === "register") {
+        if (values.password !== values.confirmPassword) throw new Error("As senhas não coincidem.");
+        feedback.textContent = "Criando sua conta segura...";
+        await api("/api/auth/register", { method: "POST", body: JSON.stringify(values) });
+        setMode("login");
+        feedback.textContent = "Conta criada. Agora entre para jogar.";
+        return;
+      }
+      feedback.textContent = "Validando acesso e pagamento...";
       const data = await api("/api/auth/login", {
         method: "POST",
-        body: JSON.stringify(Object.fromEntries(new FormData(e.currentTarget))),
+        body: JSON.stringify(values),
       });
       token = data.token;
       player = data.player;

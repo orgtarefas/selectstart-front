@@ -96,6 +96,7 @@ button {
   max-width: 90%;
   margin: auto;
 }
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:5px;border-radius:10px;background:#edf3f9}.auth-tabs button{padding:10px;border:0;border-radius:7px;background:transparent;color:#526477;font-weight:800}.auth-tabs button.is-active{background:#fff;color:#126dd0;box-shadow:0 4px 14px #163b651c}
 .login-card label {
   display: grid;
   gap: 6px;
