@@ -32,43 +32,40 @@ async function api(path, options = {}) {
 }
 
 function landing() {
-  app.innerHTML = `<main class="landing screen"><section class="hero"><div><span class="eyebrow">SELECTSTART · SOBREVIVÊNCIA ONLINE</span><h1>Sua cidade.<br>Sua casa.<br>Sua história.</h1><p>Entre em uma cidade viva, encontre outros jogadores e participe de desafios de sobrevivência. Cada conta recebe uma casa numerada e persistente.</p><button class="primary" id="enter">Entrar para jogar</button></div><div class="city-card"><div><strong>1.000</strong><span>casas preparadas para jogadores reais</span></div></div></section></main><dialog id="login" class="modal"><form class="login-card" data-mode="login"><button type="button" class="close">×</button><img src="${LOGO_URL}" alt="GateGuard"><div class="auth-tabs"><button type="button" class="is-active" data-auth-mode="login">Entrar</button><button type="button" data-auth-mode="register">Criar conta</button></div><label data-register-field hidden>Nome do jogador<input name="name" autocomplete="name" minlength="2" maxlength="120"></label><label>Login<input name="login" autocomplete="username" required minlength="2" maxlength="80"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="64"></label><label data-register-field hidden>Confirmar senha<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="64"></label><label><span><input type="checkbox" id="show-password"> Exibir senha</span></label><button class="primary" id="auth-submit">Entrar</button><p class="feedback"></p></form></dialog>`;
-  const modal = app.querySelector("#login");
-  const form = app.querySelector("form");
-  const setMode = (mode) => {
-    form.dataset.mode = mode;
-    form.querySelectorAll("[data-register-field]").forEach((field) => {
-      field.hidden = mode !== "register";
-      field.querySelector("input").required = mode === "register";
-    });
-    form.querySelectorAll("[data-auth-mode]").forEach((button) =>
-      button.classList.toggle("is-active", button.dataset.authMode === mode),
-    );
-    form.querySelector("#auth-submit").textContent = mode === "register" ? "Criar minha conta" : "Entrar";
-    form.querySelector("[name=password]").autocomplete = mode === "register" ? "new-password" : "current-password";
-    form.querySelector(".feedback").textContent = "";
+  app.innerHTML = `<main class="landing screen"><section class="hero"><div><span class="eyebrow">SELECTSTART · SOBREVIVÊNCIA ONLINE</span><h1>Sua cidade.<br>Sua casa.<br>Sua história.</h1><p>Entre em uma cidade viva, encontre outros jogadores e participe de desafios de sobrevivência. Cada conta recebe uma casa numerada e persistente.</p><button class="primary" id="enter">Entrar para jogar</button></div><div class="city-card"><div><strong>1.000</strong><span>casas preparadas para jogadores reais</span></div></div></section></main>
+    <dialog id="login" class="modal"><form class="login-card"><button type="button" class="close" aria-label="Fechar">×</button><img src="${LOGO_URL}" alt="GateGuard"><h2>Entrar</h2><label>Login<input name="login" autocomplete="username" required minlength="2" maxlength="80"></label><label>Senha<input name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="64"></label><label><span><input type="checkbox" data-show-password> Exibir senha</span></label><button class="primary">Entrar</button><button type="button" class="auth-link" data-open-register>Criar conta</button><p class="feedback"></p></form></dialog>
+    <dialog id="register" class="modal"><form class="login-card"><button type="button" class="close" aria-label="Fechar">×</button><img src="${LOGO_URL}" alt="GateGuard"><h2>Criar conta</h2><label>Nome do jogador<input name="name" autocomplete="name" required minlength="2" maxlength="120"></label><label>Login<input name="login" autocomplete="username" required minlength="2" maxlength="80"></label><label>Senha<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="64"></label><label>Confirmar senha<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="8" maxlength="64"></label><label><span><input type="checkbox" data-show-password> Exibir senhas</span></label><button class="primary">Criar minha conta</button><button type="button" class="auth-link" data-open-login>Já tenho uma conta</button><p class="feedback"></p></form></dialog>`;
+  const loginModal = app.querySelector("#login");
+  const registerModal = app.querySelector("#register");
+  const loginForm = loginModal.querySelector("form");
+  const registerForm = registerModal.querySelector("form");
+  const switchModal = (current, next) => {
+    current.close();
+    current.querySelector(".feedback").textContent = "";
+    next.showModal();
   };
-  app.querySelector("#enter").onclick = () => modal.showModal();
-  app.querySelector(".close").onclick = () => modal.close();
-  form.querySelectorAll("[data-auth-mode]").forEach((button) => (button.onclick = () => setMode(button.dataset.authMode)));
-  app.querySelector("#show-password").onchange = (e) => {
-    form.querySelectorAll('[name="password"],[name="confirmPassword"]').forEach((input) => { input.type = e.target.checked ? "text" : "password"; });
-  };
-  form.onsubmit = async (e) => {
+
+  app.querySelector("#enter").onclick = () => loginModal.showModal();
+  loginModal.querySelector(".close").onclick = () => loginModal.close();
+  registerModal.querySelector(".close").onclick = () => registerModal.close();
+  app.querySelector("[data-open-register]").onclick = () => switchModal(loginModal, registerModal);
+  app.querySelector("[data-open-login]").onclick = () => switchModal(registerModal, loginModal);
+  app.querySelectorAll("[data-show-password]").forEach((checkbox) => {
+    checkbox.onchange = (event) => {
+      event.currentTarget.form.querySelectorAll('input[type="password"], input[data-password-visible]').forEach((input) => {
+        input.type = event.currentTarget.checked ? "text" : "password";
+        input.toggleAttribute("data-password-visible", event.currentTarget.checked);
+      });
+    };
+  });
+
+  loginForm.onsubmit = async (e) => {
     e.preventDefault();
     const button = e.submitter;
     button.disabled = true;
-    const feedback = app.querySelector(".feedback");
+    const feedback = loginForm.querySelector(".feedback");
     const values = Object.fromEntries(new FormData(e.currentTarget));
     try {
-      if (form.dataset.mode === "register") {
-        if (values.password !== values.confirmPassword) throw new Error("As senhas não coincidem.");
-        feedback.textContent = "Criando sua conta segura...";
-        await api("/api/auth/register", { method: "POST", body: JSON.stringify(values) });
-        setMode("login");
-        feedback.textContent = "Conta criada. Agora entre para jogar.";
-        return;
-      }
       feedback.textContent = "Validando acesso e pagamento...";
       const data = await api("/api/auth/login", {
         method: "POST",
@@ -77,8 +74,29 @@ function landing() {
       token = data.token;
       player = data.player;
       sessionStorage.setItem(SESSION_KEY, token);
-      modal.close();
+      loginModal.close();
       lobby();
+    } catch (error) {
+      feedback.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  registerForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const button = e.submitter;
+    const feedback = registerForm.querySelector(".feedback");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    button.disabled = true;
+    try {
+      if (values.password !== values.confirmPassword) throw new Error("As senhas não coincidem.");
+      feedback.textContent = "Criando sua conta segura...";
+      await api("/api/auth/register", { method: "POST", body: JSON.stringify(values) });
+      registerForm.reset();
+      switchModal(registerModal, loginModal);
+      loginForm.querySelector("[name=login]").value = values.login;
+      loginForm.querySelector(".feedback").textContent = "Conta criada. Agora entre para jogar.";
     } catch (error) {
       feedback.textContent = error.message;
     } finally {
