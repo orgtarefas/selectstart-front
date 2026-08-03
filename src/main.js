@@ -250,7 +250,8 @@ function startGame(initial) {
   }
   const isBlocked = (x, z) =>
     houseColliders.some((box) => Math.abs(x - box.x) < box.halfX + .48 && Math.abs(z - box.z) < box.halfZ + .48) ||
-    treeColliders.some((tree) => Math.hypot(x - tree.x, z - tree.z) < tree.radius + .48);
+    treeColliders.some((tree) => Math.hypot(x - tree.x, z - tree.z) < tree.radius + .48) ||
+    state.players.some((other) => other.id !== player.id && other.alive && Math.hypot(x - other.x, z - other.z) < 1.15);
   const meshes = new Map(),
     keys = {};
   const attackTimes = new Map();
@@ -359,26 +360,6 @@ function startGame(initial) {
     if (!me?.alive) return;
     attackTimes.set(player.id, performance.now());
     socket.emit("player:attack");
-    const origin = new THREE.Vector2(0, 0),
-      ray = new THREE.Raycaster();
-    ray.setFromCamera(origin, camera);
-    const targets = [...meshes.entries()]
-      .filter(([id]) => id !== player.id)
-      .map(([, mesh]) => mesh);
-    const hit = ray.intersectObjects(targets, true)[0];
-    if (hit) {
-      const target = [...meshes.entries()].find(
-        ([, mesh]) => {
-          let object = hit.object;
-          while (object) {
-            if (object === mesh) return true;
-            object = object.parent;
-          }
-          return false;
-        },
-      )?.[0];
-      if (target) socket.emit("player:shoot", { targetId: target });
-    }
   };
   renderer.domElement.oncontextmenu = (event) => {
     event.preventDefault();
