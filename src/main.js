@@ -266,7 +266,9 @@ function startGame(initial) {
       }
       if (item.id === player.id) mesh.position.set(item.x, item.y - 1, item.z);
       else mesh.userData.target.set(item.x, item.y - 1, item.z);
-      mesh.rotation.y = item.rotation;
+      // O eixo frontal do modelo é -Z; o sinal invertido mantém rosto,
+      // câmera e direção enviada pelo servidor apontando para o mesmo lado.
+      mesh.rotation.y = -item.rotation;
       mesh.visible = item.alive;
     }
     for (const [id, mesh] of meshes)
@@ -287,6 +289,8 @@ function startGame(initial) {
     const skin = new THREE.MeshStandardMaterial({ color: 0xe6ad7c });
     const clothes = new THREE.MeshStandardMaterial({ color });
     const dark = new THREE.MeshStandardMaterial({ color: 0x243047 });
+    const hair = new THREE.MeshStandardMaterial({ color: 0x3a2417 });
+    const shoes = new THREE.MeshStandardMaterial({ color: 0x181b22 });
     const part = (geometry, material, x, y, z) => {
       const object = new THREE.Mesh(geometry, material);
       object.position.set(x, y, z); object.castShadow = true; group.add(object);
@@ -298,6 +302,10 @@ function startGame(initial) {
     const rightArm = part(new THREE.BoxGeometry(.28, 1, .28), skin, .58, 1.72, 0);
     const leftLeg = part(new THREE.BoxGeometry(.34, 1, .38), dark, -.24, .7, 0);
     const rightLeg = part(new THREE.BoxGeometry(.34, 1, .38), dark, .24, .7, 0);
+    const leftFoot = part(new THREE.BoxGeometry(.36, .24, .55), shoes, -.24, .14, -.08);
+    const rightFoot = part(new THREE.BoxGeometry(.36, .24, .55), shoes, .24, .14, -.08);
+    part(new THREE.BoxGeometry(.76, .18, .76), hair, 0, 3.04, 0);
+    part(new THREE.BoxGeometry(.76, .42, .12), hair, 0, 2.82, .35);
     const faceMat = new THREE.MeshBasicMaterial({ color: 0x23180f });
     const eyeGeo = new THREE.BoxGeometry(.11, .11, .025);
     const mouthGeo = new THREE.BoxGeometry(.22, .055, .025);
@@ -306,6 +314,8 @@ function startGame(initial) {
     const mouth = part(mouthGeo, faceMat, 0, 2.49, -.371);
     head.add(leftEye, rightEye, mouth);
     leftEye.position.set(-.17, .07, -.371); rightEye.position.set(.17, .07, -.371); mouth.position.set(0, -.16, -.371);
+    leftLeg.add(leftFoot); rightLeg.add(rightFoot);
+    leftFoot.position.set(0, -.56, -.08); rightFoot.position.set(0, -.56, -.08);
     group.userData.limbs = { leftArm, rightArm, leftLeg, rightLeg };
     group.userData.target = new THREE.Vector3();
     return group;
@@ -402,14 +412,14 @@ function startGame(initial) {
     const me = own();
     if (me?.alive) {
       const forward = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw) * -1),
-        right = new THREE.Vector3(forward.z, 0, -forward.x),
+        right = new THREE.Vector3(-forward.z, 0, forward.x),
         direction = new THREE.Vector3();
       if (keys.w) direction.add(forward);
       if (keys.s) direction.sub(forward);
       if (keys.d) direction.add(right);
       if (keys.a) direction.sub(right);
-      if (keys[" "] && grounded) { verticalSpeed = 8.5; grounded = false; }
-      verticalSpeed -= 22 * dt;
+      if (keys[" "] && grounded) { verticalSpeed = 10.5; grounded = false; }
+      verticalSpeed -= 34 * dt;
       me.y = Math.max(1, me.y + verticalSpeed * dt);
       if (me.y <= 1) { me.y = 1; verticalSpeed = 0; grounded = true; }
       if (direction.lengthSq()) {
