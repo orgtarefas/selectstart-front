@@ -126,7 +126,7 @@ function lobby() {
     clearInterval(waitingTimer);
     waitingTimer = null;
   }
-  app.innerHTML = `<main class="lobby screen"><header class="topbar"><div><strong>SelectStart Online</strong><small>${esc(player.displayName)}</small></div><button id="logout">Sair</button></header><div class="lobby-grid"><section class="profile"><span>SUA CASA</span><div class="house-number">#${player.houseNumber}</div><p>Esta residência está reservada para sua conta na cidade.</p><button class="primary" id="create">Criar desafio</button></section><section class="challenges"><h2>Desafios abertos</h2><p>Começa com 3 jogadores ou, após 2 minutos, com pelo menos 2.</p><div id="challenge-list">Conectando...</div></section></div><p id="notice" class="waiting"></p></main>`;
+  app.innerHTML = `<main class="lobby screen"><header class="topbar"><div><strong>SelectStart Online</strong><small>${esc(player.displayName)}</small></div><button id="logout">Sair</button></header><div class="lobby-grid"><section class="profile"><span>SUA CASA</span><div class="house-number">#${player.houseNumber}</div><p>Esta residência está reservada para sua conta na cidade.</p><button class="primary" id="create">Criar desafio</button></section><section class="challenges"><h2>Desafios abertos</h2><p>A partida começa assim que o segundo jogador entrar.</p><div id="challenge-list">Conectando...</div></section></div><p id="notice" class="waiting"></p></main>`;
   app.querySelector("#logout").onclick = () => {
     sessionStorage.removeItem(SESSION_KEY);
     token = "";
@@ -164,7 +164,7 @@ function renderChallenges(challenges) {
   );
 }
 function waiting(challenge) {
-  app.innerHTML = `<main class="waiting screen"><h1>Aguardando jogadores</h1><p>${challenge.players.length}/${challenge.targetPlayers} confirmados</p><div class="countdown" id="countdown"></div><p>Com 3 participantes começa imediatamente. Com 2, começa ao final da espera.</p></main>`;
+  app.innerHTML = `<main class="waiting screen"><h1>Aguardando outro jogador</h1><p>${challenge.players.length}/${challenge.targetPlayers} confirmados</p><div class="countdown" id="countdown"></div><p>A partida começa imediatamente quando o segundo jogador entrar.</p></main>`;
   const update = () => {
     const el = app.querySelector("#countdown");
     if (el)
@@ -189,7 +189,7 @@ function startGame(initial) {
   }
   gameCleanup?.();
   app.innerHTML =
-    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><div class="crosshair"></div><div class="game-message">Clique para controlar · WASD para mover · clique para atirar</div></main>';
+    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><div class="crosshair"></div><div class="game-message">Clique para controlar · WASD para andar · Espaço para pular · clique para atacar</div></main>';
   const container = app.querySelector(".game");
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b9df);
@@ -213,18 +213,32 @@ function startGame(initial) {
     new THREE.MeshStandardMaterial({ color: 0x4b7848 }),
   );
   ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
   scene.add(ground);
   const houseGeo = new THREE.BoxGeometry(4, 3, 4),
     houseMat = new THREE.MeshStandardMaterial({ color: 0xc9a77d });
-  const houses = new THREE.InstancedMesh(houseGeo, houseMat, 1000);
+  const houses = new THREE.InstancedMesh(houseGeo, houseMat, 180);
   const matrix = new THREE.Matrix4();
-  for (let i = 0; i < 1000; i++) {
-    const col = i % 40,
-      row = Math.floor(i / 40);
-    matrix.setPosition((col - 20) * 6, 1.5, (row - 12) * 7);
+  for (let i = 0; i < 180; i++) {
+    const col = i % 18,
+      row = Math.floor(i / 18);
+    matrix.setPosition((col - 9) * 13, 1.5, (row - 5) * 15);
     houses.setMatrixAt(i, matrix);
   }
+  houses.castShadow = true;
+  houses.receiveShadow = true;
   scene.add(houses);
+  const trunkGeo = new THREE.BoxGeometry(.7, 3, .7);
+  const crownGeo = new THREE.BoxGeometry(2.8, 2.8, 2.8);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6f4728 });
+  const crownMat = new THREE.MeshStandardMaterial({ color: 0x2f6f3a });
+  for (let i = 0; i < 45; i++) {
+    const x = ((i * 37) % 210) - 105, z = ((i * 61) % 210) - 105;
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    const crown = new THREE.Mesh(crownGeo, crownMat);
+    trunk.position.set(x, 1.5, z); crown.position.set(x, 4.2, z);
+    trunk.castShadow = crown.castShadow = true; scene.add(trunk, crown);
+  }
   const meshes = new Map(),
     keys = {};
   let state = initial;
@@ -234,16 +248,12 @@ function startGame(initial) {
     for (const item of next.players) {
       let mesh = meshes.get(item.id);
       if (!mesh) {
-        mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(1, 2, 1),
-          new THREE.MeshStandardMaterial({
-            color: item.id === player.id ? 0x1684ff : 0xff5533,
-          }),
-        );
+        mesh = createCharacter(item.id === player.id ? 0x1684ff : 0xff5533);
         scene.add(mesh);
         meshes.set(item.id, mesh);
       }
-      mesh.position.set(item.x, 1, item.z);
+      if (item.id === player.id) mesh.position.set(item.x, item.y - 1, item.z);
+      else mesh.userData.target.set(item.x, item.y - 1, item.z);
       mesh.rotation.y = item.rotation;
       mesh.visible = item.alive;
     }
@@ -259,6 +269,24 @@ function startGame(initial) {
     }
     app.querySelector("#players").textContent =
       `Vivos ${next.players.filter((p) => p.alive).length}`;
+  }
+  function createCharacter(color) {
+    const group = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0xe6ad7c });
+    const clothes = new THREE.MeshStandardMaterial({ color });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x243047 });
+    const part = (geometry, material, x, y, z) => {
+      const object = new THREE.Mesh(geometry, material);
+      object.position.set(x, y, z); object.castShadow = true; group.add(object);
+    };
+    part(new THREE.BoxGeometry(.72, .72, .72), skin, 0, 2.65, 0);
+    part(new THREE.BoxGeometry(.82, 1.05, .48), clothes, 0, 1.72, 0);
+    part(new THREE.BoxGeometry(.28, 1, .28), skin, -.58, 1.72, 0);
+    part(new THREE.BoxGeometry(.28, 1, .28), skin, .58, 1.72, 0);
+    part(new THREE.BoxGeometry(.34, 1, .38), dark, -.24, .7, 0);
+    part(new THREE.BoxGeometry(.34, 1, .38), dark, .24, .7, 0);
+    group.userData.target = new THREE.Vector3();
+    return group;
   }
   sync(initial);
   const onUpdate = (next) => {
@@ -282,10 +310,10 @@ function startGame(initial) {
     const targets = [...meshes.entries()]
       .filter(([id]) => id !== player.id)
       .map(([, mesh]) => mesh);
-    const hit = ray.intersectObjects(targets, false)[0];
+    const hit = ray.intersectObjects(targets, true)[0];
     if (hit) {
       const target = [...meshes.entries()].find(
-        ([, mesh]) => mesh === hit.object,
+        ([, mesh]) => mesh === hit.object || mesh.children.includes(hit.object),
       )?.[0];
       if (target) socket.emit("player:shoot", { targetId: target });
     }
@@ -294,7 +322,7 @@ function startGame(initial) {
   const keyup = (e) => (keys[e.key.toLowerCase()] = false);
   addEventListener("keydown", keydown);
   addEventListener("keyup", keyup);
-  let yaw = 0;
+  let yaw = 0, verticalSpeed = 0, grounded = true, lastMoveSent = 0;
   const mouse = (e) => {
     if (document.pointerLockElement === renderer.domElement)
       yaw -= e.movementX * 0.002;
@@ -321,20 +349,31 @@ function startGame(initial) {
       if (keys.s) direction.sub(forward);
       if (keys.d) direction.add(right);
       if (keys.a) direction.sub(right);
+      if (keys[" "] && grounded) { verticalSpeed = 8.5; grounded = false; }
+      verticalSpeed -= 22 * dt;
+      me.y = Math.max(1, me.y + verticalSpeed * dt);
+      if (me.y <= 1) { me.y = 1; verticalSpeed = 0; grounded = true; }
       if (direction.lengthSq()) {
         direction.normalize().multiplyScalar(7 * dt);
         me.x = Math.max(-120, Math.min(120, me.x + direction.x));
         me.z = Math.max(-120, Math.min(120, me.z + direction.z));
-        me.rotation = yaw;
-        socket.emit("player:move", { x: me.x, z: me.z, rotation: yaw });
       }
+      me.rotation = yaw;
+      if (direction.lengthSq() || !grounded || now - lastMoveSent > 100) {
+        socket.emit("player:move", { x: me.x, y: me.y, z: me.z, rotation: yaw });
+        lastMoveSent = now;
+      }
+      const ownMesh = meshes.get(player.id);
+      if (ownMesh) ownMesh.position.set(me.x, me.y - 1, me.z);
       camera.position.set(
         me.x - Math.sin(yaw) * 5,
-        4,
+        me.y + 3.2,
         me.z + Math.cos(yaw) * 5,
       );
-      camera.lookAt(me.x, 1.5, me.z);
+      camera.lookAt(me.x, me.y + 1.4, me.z);
     }
+    for (const [id, mesh] of meshes)
+      if (id !== player.id) mesh.position.lerp(mesh.userData.target, Math.min(1, dt * 12));
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
