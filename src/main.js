@@ -189,7 +189,7 @@ function startGame(initial) {
   }
   gameCleanup?.();
   app.innerHTML =
-    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><aside class="minimap"><strong>MAPA</strong><canvas id="minimap" width="180" height="180"></canvas><small><i class="you"></i> Você <i class="enemy"></i> Adversário</small></aside><div class="crosshair"></div><div class="game-message">Clique para controlar · WASD para andar · Espaço para pular · clique para atacar</div></main>';
+    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><aside class="minimap"><strong>MAPA</strong><canvas id="minimap" width="180" height="180"></canvas><small><i class="you"></i> Você <i class="enemy"></i> Adversário</small></aside><div class="crosshair"></div><div class="game-message">WASD para andar · segure o botão esquerdo para girar · clique para atacar · Espaço para pular</div></main>';
   const container = app.querySelector(".game");
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b9df);
@@ -253,6 +253,7 @@ function startGame(initial) {
     treeColliders.some((tree) => Math.hypot(x - tree.x, z - tree.z) < tree.radius + .48);
   const meshes = new Map(),
     keys = {};
+  const attackTimes = new Map();
   let state = initial;
   const own = () => state.players.find((p) => p.id === player.id);
   function sync(next) {
@@ -264,6 +265,7 @@ function startGame(initial) {
         scene.add(mesh);
         meshes.set(item.id, mesh);
       }
+      mesh.userData.playerId = item.id;
       if (item.id === player.id) mesh.position.set(item.x, item.y - 1, item.z);
       else mesh.userData.target.set(item.x, item.y - 1, item.z);
       // O eixo frontal do modelo é -Z; o sinal invertido mantém rosto,
@@ -320,12 +322,15 @@ function startGame(initial) {
     group.userData.target = new THREE.Vector3();
     return group;
   }
-  function animateCharacter(character, time, moving) {
+  function animateCharacter(character, time, moving, attacking = false) {
     const limbs = character.userData.limbs;
     if (!limbs) return;
     const swing = moving ? Math.sin(time * .012) * .65 : 0;
     limbs.leftArm.rotation.x = THREE.MathUtils.lerp(limbs.leftArm.rotation.x, swing, .22);
-    limbs.rightArm.rotation.x = THREE.MathUtils.lerp(limbs.rightArm.rotation.x, -swing, .22);
+    const attackStarted = attackTimes.get(character.userData.playerId) ?? -Infinity;
+    const attackProgress = (time - attackStarted) / 280;
+    const attackSwing = attackProgress >= 0 && attackProgress <= 1 ? Math.sin(attackProgress * Math.PI) * 1.9 : null;
+    limbs.rightArm.rotation.x = THREE.MathUtils.lerp(limbs.rightArm.rotation.x, attackSwing ?? -swing, attacking ? .55 : .22);
     limbs.leftLeg.rotation.x = THREE.MathUtils.lerp(limbs.leftLeg.rotation.x, -swing, .22);
     limbs.rightLeg.rotation.x = THREE.MathUtils.lerp(limbs.rightLeg.rotation.x, swing, .22);
   }
@@ -338,6 +343,8 @@ function startGame(initial) {
     sync(next);
   };
   socket.on("challenge:update", onUpdate);
+  const onAttack = ({ playerId }) => attackTimes.set(playerId, performance.now());
+  socket.on("player:attack", onAttack);
   renderer.domElement.onclick = () => {
     if (document.pointerLockElement !== renderer.domElement) {
       renderer.domElement.requestPointerLock();
@@ -345,6 +352,8 @@ function startGame(initial) {
     }
     const me = own();
     if (!me?.alive) return;
+    attackTimes.set(player.id, performance.now());
+    socket.emit("player:attack");
     const origin = new THREE.Vector2(0, 0),
       ray = new THREE.Raycaster();
     ray.setFromCamera(origin, camera);
@@ -372,8 +381,8 @@ function startGame(initial) {
   addEventListener("keyup", keyup);
   let yaw = 0, verticalSpeed = 0, grounded = true, lastMoveSent = 0;
   const mouse = (e) => {
-    if (document.pointerLockElement === renderer.domElement)
-      yaw -= e.movementX * 0.002;
+    if (document.pointerLockElement === renderer.domElement && (e.buttons & 1))
+      yaw += e.movementX * 0.002;
   };
   addEventListener("mousemove", mouse);
   const resize = () => {
@@ -437,7 +446,7 @@ function startGame(initial) {
       const ownMesh = meshes.get(player.id);
       if (ownMesh) {
         ownMesh.position.set(me.x, me.y - 1, me.z);
-        animateCharacter(ownMesh, now, direction.lengthSq() > 0 && grounded);
+        animateCharacter(ownMesh, now, direction.lengthSq() > 0 && grounded, now - (attackTimes.get(player.id) ?? -Infinity) < 280);
       }
       camera.position.set(
         me.x - Math.sin(yaw) * 5,
@@ -460,6 +469,7 @@ function startGame(initial) {
   gameCleanup = () => {
     stopped = true;
     socket.off("challenge:update", onUpdate);
+    socket.off("player:attack", onAttack);
     removeEventListener("keydown", keydown);
     removeEventListener("keyup", keyup);
     removeEventListener("mousemove", mouse);
