@@ -189,7 +189,7 @@ function startGame(initial) {
   }
   gameCleanup?.();
   app.innerHTML =
-    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><aside class="minimap"><strong>MAPA</strong><canvas id="minimap" width="180" height="180"></canvas><small><i class="you"></i> Você <i class="enemy"></i> Adversário</small></aside><div class="crosshair"></div><div class="game-message">WASD para andar · segure o botão esquerdo para girar · clique para atacar · Espaço para pular</div></main>';
+    '<main class="game"><div class="hud"><div id="health" class="life-panel"></div><div id="players"></div></div><aside class="minimap"><strong>MAPA</strong><canvas id="minimap" width="180" height="180"></canvas><small><i class="you"></i> Você <i class="enemy"></i> Adversário</small></aside><div class="crosshair"></div><div class="game-message">WASD para andar · esquerdo orienta/ataca · direito gira apenas a câmera · Espaço para pular</div></main>';
   const container = app.querySelector(".game");
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b9df);
@@ -278,11 +278,9 @@ function startGame(initial) {
         scene.remove(mesh);
         meshes.delete(id);
       }
-    const me = own();
-    if (me) {
-      app.querySelector("#health").textContent = `Vida ${me.health}`;
-      app.querySelector("#health").classList.toggle("danger", !me.alive);
-    }
+    app.querySelector("#health").innerHTML = next.players.map((item) =>
+      `<div class="player-life ${item.alive ? "" : "eliminated"}"><span>${item.id === player.id ? "Você" : esc(item.displayName || "Adversário")}</span><b>${item.health}</b><div><i style="width:${item.health}%"></i></div></div>`,
+    ).join("");
     app.querySelector("#players").textContent =
       `Vivos ${next.players.filter((p) => p.alive).length}`;
   }
@@ -345,6 +343,10 @@ function startGame(initial) {
   socket.on("challenge:update", onUpdate);
   const onAttack = ({ playerId }) => attackTimes.set(playerId, performance.now());
   socket.on("player:attack", onAttack);
+  renderer.domElement.onmousedown = () => {
+    if (document.pointerLockElement !== renderer.domElement)
+      renderer.domElement.requestPointerLock();
+  };
   renderer.domElement.onclick = () => {
     if (document.pointerLockElement !== renderer.domElement) {
       renderer.domElement.requestPointerLock();
@@ -375,14 +377,21 @@ function startGame(initial) {
       if (target) socket.emit("player:shoot", { targetId: target });
     }
   };
+  renderer.domElement.oncontextmenu = (event) => {
+    event.preventDefault();
+    if (document.pointerLockElement !== renderer.domElement)
+      renderer.domElement.requestPointerLock();
+  };
   const keydown = (e) => (keys[e.key.toLowerCase()] = true);
   const keyup = (e) => (keys[e.key.toLowerCase()] = false);
   addEventListener("keydown", keydown);
   addEventListener("keyup", keyup);
-  let yaw = 0, verticalSpeed = 0, grounded = true, lastMoveSent = 0;
+  let yaw = 0, cameraYaw = 0, verticalSpeed = 0, grounded = true, lastMoveSent = 0;
   const mouse = (e) => {
-    if (document.pointerLockElement === renderer.domElement && (e.buttons & 1))
-      yaw += e.movementX * 0.002;
+    if (document.pointerLockElement !== renderer.domElement) return;
+    const rotation = e.movementX * 0.002;
+    if (e.buttons & 1) { yaw += rotation; cameraYaw += rotation; }
+    if (e.buttons & 2) cameraYaw += rotation;
   };
   addEventListener("mousemove", mouse);
   const resize = () => {
@@ -449,9 +458,9 @@ function startGame(initial) {
         animateCharacter(ownMesh, now, direction.lengthSq() > 0 && grounded, now - (attackTimes.get(player.id) ?? -Infinity) < 280);
       }
       camera.position.set(
-        me.x - Math.sin(yaw) * 5,
+        me.x - Math.sin(cameraYaw) * 5,
         me.y + 3.2,
-        me.z + Math.cos(yaw) * 5,
+        me.z + Math.cos(cameraYaw) * 5,
       );
       camera.lookAt(me.x, me.y + 1.4, me.z);
     }
