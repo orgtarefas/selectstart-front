@@ -189,7 +189,7 @@ function startGame(initial) {
   }
   gameCleanup?.();
   app.innerHTML =
-    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><div class="crosshair"></div><div class="game-message">Clique para controlar · WASD para andar · Espaço para pular · clique para atacar</div></main>';
+    '<main class="game"><div class="hud"><div id="health">Vida 100</div><div id="players"></div></div><aside class="minimap"><strong>MAPA</strong><canvas id="minimap" width="180" height="180"></canvas><small><i class="you"></i> Você <i class="enemy"></i> Adversário</small></aside><div class="crosshair"></div><div class="game-message">Clique para controlar · WASD para andar · Espaço para pular · clique para atacar</div></main>';
   const container = app.querySelector(".game");
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87b9df);
@@ -219,12 +219,18 @@ function startGame(initial) {
     houseMat = new THREE.MeshStandardMaterial({ color: 0xc9a77d });
   const houses = new THREE.InstancedMesh(houseGeo, houseMat, 180);
   const matrix = new THREE.Matrix4();
+  const houseColliders = [];
+  let houseIndex = 0;
   for (let i = 0; i < 180; i++) {
     const col = i % 18,
       row = Math.floor(i / 18);
-    matrix.setPosition((col - 9) * 13, 1.5, (row - 5) * 15);
-    houses.setMatrixAt(i, matrix);
+    const x = (col - 9) * 13, z = (row - 5) * 15;
+    if (Math.hypot(x, z) < 32) continue;
+    matrix.setPosition(x, 1.5, z);
+    houses.setMatrixAt(houseIndex++, matrix);
+    houseColliders.push({ x, z, halfX: 2, halfZ: 2 });
   }
+  houses.count = houseIndex;
   houses.castShadow = true;
   houses.receiveShadow = true;
   scene.add(houses);
@@ -232,13 +238,19 @@ function startGame(initial) {
   const crownGeo = new THREE.BoxGeometry(2.8, 2.8, 2.8);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6f4728 });
   const crownMat = new THREE.MeshStandardMaterial({ color: 0x2f6f3a });
+  const treeColliders = [];
   for (let i = 0; i < 45; i++) {
     const x = ((i * 37) % 210) - 105, z = ((i * 61) % 210) - 105;
+    if (Math.hypot(x, z) < 28) continue;
     const trunk = new THREE.Mesh(trunkGeo, trunkMat);
     const crown = new THREE.Mesh(crownGeo, crownMat);
     trunk.position.set(x, 1.5, z); crown.position.set(x, 4.2, z);
     trunk.castShadow = crown.castShadow = true; scene.add(trunk, crown);
+    treeColliders.push({ x, z, radius: .7 });
   }
+  const isBlocked = (x, z) =>
+    houseColliders.some((box) => Math.abs(x - box.x) < box.halfX + .48 && Math.abs(z - box.z) < box.halfZ + .48) ||
+    treeColliders.some((tree) => Math.hypot(x - tree.x, z - tree.z) < tree.radius + .48);
   const meshes = new Map(),
     keys = {};
   let state = initial;
@@ -278,15 +290,34 @@ function startGame(initial) {
     const part = (geometry, material, x, y, z) => {
       const object = new THREE.Mesh(geometry, material);
       object.position.set(x, y, z); object.castShadow = true; group.add(object);
+      return object;
     };
-    part(new THREE.BoxGeometry(.72, .72, .72), skin, 0, 2.65, 0);
+    const head = part(new THREE.BoxGeometry(.72, .72, .72), skin, 0, 2.65, 0);
     part(new THREE.BoxGeometry(.82, 1.05, .48), clothes, 0, 1.72, 0);
-    part(new THREE.BoxGeometry(.28, 1, .28), skin, -.58, 1.72, 0);
-    part(new THREE.BoxGeometry(.28, 1, .28), skin, .58, 1.72, 0);
-    part(new THREE.BoxGeometry(.34, 1, .38), dark, -.24, .7, 0);
-    part(new THREE.BoxGeometry(.34, 1, .38), dark, .24, .7, 0);
+    const leftArm = part(new THREE.BoxGeometry(.28, 1, .28), skin, -.58, 1.72, 0);
+    const rightArm = part(new THREE.BoxGeometry(.28, 1, .28), skin, .58, 1.72, 0);
+    const leftLeg = part(new THREE.BoxGeometry(.34, 1, .38), dark, -.24, .7, 0);
+    const rightLeg = part(new THREE.BoxGeometry(.34, 1, .38), dark, .24, .7, 0);
+    const faceMat = new THREE.MeshBasicMaterial({ color: 0x23180f });
+    const eyeGeo = new THREE.BoxGeometry(.11, .11, .025);
+    const mouthGeo = new THREE.BoxGeometry(.22, .055, .025);
+    const leftEye = part(eyeGeo, faceMat, -.17, 2.72, -.371);
+    const rightEye = part(eyeGeo, faceMat, .17, 2.72, -.371);
+    const mouth = part(mouthGeo, faceMat, 0, 2.49, -.371);
+    head.add(leftEye, rightEye, mouth);
+    leftEye.position.set(-.17, .07, -.371); rightEye.position.set(.17, .07, -.371); mouth.position.set(0, -.16, -.371);
+    group.userData.limbs = { leftArm, rightArm, leftLeg, rightLeg };
     group.userData.target = new THREE.Vector3();
     return group;
+  }
+  function animateCharacter(character, time, moving) {
+    const limbs = character.userData.limbs;
+    if (!limbs) return;
+    const swing = moving ? Math.sin(time * .012) * .65 : 0;
+    limbs.leftArm.rotation.x = THREE.MathUtils.lerp(limbs.leftArm.rotation.x, swing, .22);
+    limbs.rightArm.rotation.x = THREE.MathUtils.lerp(limbs.rightArm.rotation.x, -swing, .22);
+    limbs.leftLeg.rotation.x = THREE.MathUtils.lerp(limbs.leftLeg.rotation.x, -swing, .22);
+    limbs.rightLeg.rotation.x = THREE.MathUtils.lerp(limbs.rightLeg.rotation.x, swing, .22);
   }
   sync(initial);
   const onUpdate = (next) => {
@@ -313,7 +344,14 @@ function startGame(initial) {
     const hit = ray.intersectObjects(targets, true)[0];
     if (hit) {
       const target = [...meshes.entries()].find(
-        ([, mesh]) => mesh === hit.object || mesh.children.includes(hit.object),
+        ([, mesh]) => {
+          let object = hit.object;
+          while (object) {
+            if (object === mesh) return true;
+            object = object.parent;
+          }
+          return false;
+        },
       )?.[0];
       if (target) socket.emit("player:shoot", { targetId: target });
     }
@@ -334,6 +372,27 @@ function startGame(initial) {
     renderer.setSize(innerWidth, innerHeight);
   };
   addEventListener("resize", resize);
+  const minimap = app.querySelector("#minimap");
+  const mapContext = minimap.getContext("2d");
+  function drawMinimap() {
+    const size = minimap.width, scale = size / 260;
+    mapContext.clearRect(0, 0, size, size);
+    mapContext.fillStyle = "#173c2c"; mapContext.fillRect(0, 0, size, size);
+    mapContext.strokeStyle = "#ffffff22"; mapContext.lineWidth = 1;
+    for (let line = 20; line < size; line += 20) {
+      mapContext.beginPath(); mapContext.moveTo(line, 0); mapContext.lineTo(line, size); mapContext.stroke();
+      mapContext.beginPath(); mapContext.moveTo(0, line); mapContext.lineTo(size, line); mapContext.stroke();
+    }
+    for (const item of state.players) {
+      if (!item.alive) continue;
+      const x = size / 2 + item.x * scale, y = size / 2 + item.z * scale;
+      mapContext.save(); mapContext.translate(x, y); mapContext.rotate(-item.rotation);
+      mapContext.fillStyle = item.id === player.id ? "#37a2ff" : "#ff5147";
+      mapContext.beginPath(); mapContext.moveTo(0, -7); mapContext.lineTo(5, 5); mapContext.lineTo(-5, 5); mapContext.closePath(); mapContext.fill();
+      mapContext.restore();
+    }
+    mapContext.strokeStyle = "#ffffff88"; mapContext.strokeRect(.5, .5, size - 1, size - 1);
+  }
   let last = performance.now();
   let stopped = false;
   function frame(now) {
@@ -355,8 +414,10 @@ function startGame(initial) {
       if (me.y <= 1) { me.y = 1; verticalSpeed = 0; grounded = true; }
       if (direction.lengthSq()) {
         direction.normalize().multiplyScalar(7 * dt);
-        me.x = Math.max(-120, Math.min(120, me.x + direction.x));
-        me.z = Math.max(-120, Math.min(120, me.z + direction.z));
+        const nextX = Math.max(-120, Math.min(120, me.x + direction.x));
+        const nextZ = Math.max(-120, Math.min(120, me.z + direction.z));
+        if (!isBlocked(nextX, me.z)) me.x = nextX;
+        if (!isBlocked(me.x, nextZ)) me.z = nextZ;
       }
       me.rotation = yaw;
       if (direction.lengthSq() || !grounded || now - lastMoveSent > 100) {
@@ -364,7 +425,10 @@ function startGame(initial) {
         lastMoveSent = now;
       }
       const ownMesh = meshes.get(player.id);
-      if (ownMesh) ownMesh.position.set(me.x, me.y - 1, me.z);
+      if (ownMesh) {
+        ownMesh.position.set(me.x, me.y - 1, me.z);
+        animateCharacter(ownMesh, now, direction.lengthSq() > 0 && grounded);
+      }
       camera.position.set(
         me.x - Math.sin(yaw) * 5,
         me.y + 3.2,
@@ -373,7 +437,12 @@ function startGame(initial) {
       camera.lookAt(me.x, me.y + 1.4, me.z);
     }
     for (const [id, mesh] of meshes)
-      if (id !== player.id) mesh.position.lerp(mesh.userData.target, Math.min(1, dt * 12));
+      if (id !== player.id) {
+        const moving = mesh.position.distanceToSquared(mesh.userData.target) > .0004;
+        mesh.position.lerp(mesh.userData.target, Math.min(1, dt * 12));
+        animateCharacter(mesh, now, moving);
+      }
+    drawMinimap();
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
