@@ -343,9 +343,12 @@ function startGame(initial) {
   socket.on("challenge:update", onUpdate);
   const onAttack = ({ playerId }) => attackTimes.set(playerId, performance.now());
   socket.on("player:attack", onAttack);
-  renderer.domElement.onmousedown = () => {
+  renderer.domElement.onmousedown = (event) => {
     if (document.pointerLockElement !== renderer.domElement)
       renderer.domElement.requestPointerLock();
+    // O botão esquerdo transforma a direção visual atual na nova frente
+    // do personagem; o direito nunca altera essa orientação.
+    if (event.button === 0) yaw = cameraYaw;
   };
   renderer.domElement.onclick = () => {
     if (document.pointerLockElement !== renderer.domElement) {
@@ -390,7 +393,7 @@ function startGame(initial) {
   const mouse = (e) => {
     if (document.pointerLockElement !== renderer.domElement) return;
     const rotation = e.movementX * 0.002;
-    if (e.buttons & 1) { yaw += rotation; cameraYaw += rotation; }
+    if (e.buttons & 1) { cameraYaw += rotation; yaw = cameraYaw; }
     if (e.buttons & 2) cameraYaw += rotation;
   };
   addEventListener("mousemove", mouse);
